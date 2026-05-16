@@ -31,16 +31,41 @@
 #include "net/routing/routing.h"
 #include "net/netstack.h"
 #include "net/ipv6/simple-udp.h"
-
 #include "sys/log.h"
+#include "cfs/cfs.h"
+#include "cfs/cfs-coffee.h"
+#include "sys/node-id.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #define LOG_MODULE "App"
 #define LOG_LEVEL LOG_LEVEL_INFO
 
-#define WITH_SERVER_REPLY  1
-#define UDP_CLIENT_PORT	8765
-#define UDP_SERVER_PORT	5678
+#define UDP_CLIENT_PORT 8765
+#define UDP_SERVER_PORT 5678
+#define CHUNK_SIZE 64
+#define TOTAL_FIRMWARE_SIZE 129760
+#define EXPECTED_BLOCKS ((TOTAL_FIRMWARE_SIZE + CHUNK_SIZE - 1) / CHUNK_SIZE) // 2028 Paket
+
+struct ota_packet {
+    uint16_t block_num;
+    uint8_t data_len;
+    uint16_t checksum;
+    uint8_t payload[CHUNK_SIZE];
+};
 
 static struct simple_udp_connection udp_conn;
+static uint32_t expected_block = 0; // Alıcının beklediği sıradaki blok
+
+// --- ŞARTNAME: CHECKSUM DOĞRULAMA FONKSİYONU ---
+static uint16_t calculate_checksum(uint8_t *data, uint8_t len) {
+    uint16_t sum = 0;
+    for(int i = 0; i < len; i++) {
+        sum += data[i];
+    }
+    return sum;
+}
 
 PROCESS(udp_server_process, "UDP server");
 AUTOSTART_PROCESSES(&udp_server_process);
@@ -54,27 +79,61 @@ udp_rx_callback(struct simple_udp_connection *c,
          const uint8_t *data,
          uint16_t datalen)
 {
-  LOG_INFO("Received request '%.*s' from ", datalen, (char *) data);
-  LOG_INFO_6ADDR(sender_addr);
-  LOG_INFO_("\n");
-#if WITH_SERVER_REPLY
-  /* send back the same string to the client as an echo reply */
-  LOG_INFO("Sending response.\n");
-  simple_udp_sendto(&udp_conn, data, datalen, sender_addr);
-#endif /* WITH_SERVER_REPLY */
+  struct ota_packet *received_packet = (struct ota_packet *)data;
+
+  // 1. Şartname: Parça Doğrulama (Checksum Kontrolü)
+  uint16_t calculated_chk = calculate_checksum(received_packet->payload, received_packet->data_len);
+  
+  if(calculated_chk != received_packet->checksum) {
+      LOG_ERR("HATA: Checksum uyusmazligi! Paket bozuk geldi, ACK gonderilmiyor.\n");
+      return; // ACK göndermiyoruz! Gönderici zaman aşımına uğrayıp tekrar yollayacak.
+  }
+
+  // 2. Şartname: Sıralama ve Diske Yazma
+  if(received_packet->block_num == expected_block) {
+      // Diske Yazma (Offset kullanarak doğru yere)
+      int fd = cfs_open("downloaded-firmware.z1", CFS_WRITE);
+      if(fd >= 0) {
+          cfs_seek(fd, received_packet->block_num * CHUNK_SIZE, CFS_SEEK_SET);
+          cfs_write(fd, received_packet->payload, received_packet->data_len);
+          cfs_close(fd);
+      }
+      
+      expected_block++; // Kayıt başarılı, bir sonraki bloğu beklemeye başla
+
+      // 3. Şartname: Tüm İmajın Tamamlanması
+      if(expected_block == EXPECTED_BLOCKS) {
+          LOG_INFO("Yuklenmeye hazir yeni firmware alimi tamamlandi.\n");
+      }
+  } else if (received_packet->block_num < expected_block) {
+      // Ağ gecikmesinden dolayı eski bir paket tekrar geldiyse, göndericiyi rahatlatmak için ACK'yı tekrar bas
+      LOG_INFO("Eski paket (%d) tekrar alindi, ACK yenileniyor.\n", received_packet->block_num);
+  }
+
+  // 4. Şartname: Akıllı Onay (ACK) Gönderimi
+  char ack_msg[32];
+  snprintf(ack_msg, sizeof(ack_msg), "ACK:%d", received_packet->block_num);
+  
+  LOG_INFO("Onay (%s) gonderiliyor.\n", ack_msg);
+  simple_udp_sendto(&udp_conn, ack_msg, strlen(ack_msg), sender_addr);
 }
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(udp_server_process, ev, data)
 {
   PROCESS_BEGIN();
 
-  /* Initialize DAG root */
   NETSTACK_ROUTING.root_start();
 
-  /* Initialize UDP connection */
+  cfs_coffee_format();
+  LOG_INFO("Alici cihaz (ID:1) CFS Diski formatlandi.\n");
+
+  int fd = cfs_open("downloaded-firmware.z1", CFS_WRITE);
+  if(fd >= 0) {
+      cfs_close(fd);
+  }
+
   simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL,
                       UDP_CLIENT_PORT, udp_rx_callback);
 
   PROCESS_END();
 }
-/*---------------------------------------------------------------------------*/
