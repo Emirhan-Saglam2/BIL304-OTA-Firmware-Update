@@ -91,8 +91,11 @@ udp_rx_callback(struct simple_udp_connection *c,
 
   // 2. Sartname: Siralama ve Diske Yazma
   if(received_packet->block_num == expected_block) {
-      // Diske Yazma (Offset kullanarak dogru yere)
-      int fd = cfs_open("downloaded-firmware.z1", CFS_WRITE);
+      
+      // MÜHENDİSLİK NOTU: Contiki Coffee FS dosya isimleri maks 16 karakter destekler!
+      // Bu yuzden "downloaded-firmware.z1" yerine kisa olan "yeni-fw.z1" kullanilmistir.
+      int fd = cfs_open("yeni-fw.z1", CFS_WRITE);
+      
       if(fd >= 0) {
           cfs_seek(fd, received_packet->block_num * CHUNK_SIZE, CFS_SEEK_SET);
           cfs_write(fd, received_packet->payload, received_packet->data_len);
@@ -105,7 +108,9 @@ udp_rx_callback(struct simple_udp_connection *c,
       if(expected_block == EXPECTED_BLOCKS) {
           LOG_INFO("Tum parcalar alindi. Tum-imaj dogrulamasi (Whole-Image Checksum) baslatiliyor...\n");
           
-          int verify_fd = cfs_open("downloaded-firmware.z1", CFS_READ);
+          // MÜHENDİSLİK NOTU: Dogrulama islemi icin ayni kisa dosya adiyla okuma yapiyoruz.
+          int verify_fd = cfs_open("yeni-fw.z1", CFS_READ);
+          
           if(verify_fd >= 0) {
               uint32_t total_checksum = 0;
               uint8_t buffer[CHUNK_SIZE];
@@ -148,7 +153,8 @@ PROCESS_THREAD(udp_server_process, ev, data)
   cfs_coffee_format();
   LOG_INFO("Alici cihaz (ID:1) CFS Diski formatlandi.\n");
 
-  int fd = cfs_open("downloaded-firmware.z1", CFS_WRITE);
+  // MÜHENDİSLİK NOTU: Dosya ilk kez olusturulurken de ayni 16 karakter alti kisa isim kullaniliyor.
+  int fd = cfs_open("yeni-fw.z1", CFS_WRITE);
   if(fd >= 0) {
       cfs_close(fd);
   }
