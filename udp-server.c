@@ -3,13 +3,13 @@
  * modification, are permitted provided that the following conditions
  * are met:
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ * notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ * notice, this list of conditions and the following disclaimer in the
+ * documentation and/or other materials provided with the distribution.
  * 3. Neither the name of the Institute nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
+ * may be used to endorse or promote products derived from this software
+ * without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE INSTITUTE AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -56,9 +56,9 @@ struct ota_packet {
 };
 
 static struct simple_udp_connection udp_conn;
-static uint32_t expected_block = 0; // Alıcının beklediği sıradaki blok
+static uint32_t expected_block = 0; // Alicinin bekledigi siradaki blok
 
-// --- ŞARTNAME: CHECKSUM DOĞRULAMA FONKSİYONU ---
+// --- SARTNAME: PARCA DOGRULAMA (CHECKSUM) FONKSIYONU ---
 static uint16_t calculate_checksum(uint8_t *data, uint8_t len) {
     uint16_t sum = 0;
     for(int i = 0; i < len; i++) {
@@ -81,17 +81,17 @@ udp_rx_callback(struct simple_udp_connection *c,
 {
   struct ota_packet *received_packet = (struct ota_packet *)data;
 
-  // 1. Şartname: Parça Doğrulama (Checksum Kontrolü)
+  // 1. Sartname: Parca Dogrulama (Checksum Kontrolu)
   uint16_t calculated_chk = calculate_checksum(received_packet->payload, received_packet->data_len);
   
   if(calculated_chk != received_packet->checksum) {
       LOG_ERR("HATA: Checksum uyusmazligi! Paket bozuk geldi, ACK gonderilmiyor.\n");
-      return; // ACK göndermiyoruz! Gönderici zaman aşımına uğrayıp tekrar yollayacak.
+      return; // ACK gondermiyoruz! Gonderici zaman asimina ugrayip tekrar yollayacak.
   }
 
-  // 2. Şartname: Sıralama ve Diske Yazma
+  // 2. Sartname: Siralama ve Diske Yazma
   if(received_packet->block_num == expected_block) {
-      // Diske Yazma (Offset kullanarak doğru yere)
+      // Diske Yazma (Offset kullanarak dogru yere)
       int fd = cfs_open("downloaded-firmware.z1", CFS_WRITE);
       if(fd >= 0) {
           cfs_seek(fd, received_packet->block_num * CHUNK_SIZE, CFS_SEEK_SET);
@@ -99,18 +99,39 @@ udp_rx_callback(struct simple_udp_connection *c,
           cfs_close(fd);
       }
       
-      expected_block++; // Kayıt başarılı, bir sonraki bloğu beklemeye başla
+      expected_block++; // Kayit basarili, bir sonraki blogu beklemeye basla
 
-      // 3. Şartname: Tüm İmajın Tamamlanması
+      // 3. Sartname: Tum Imajin Tamamlanmasi ve Tum-Imaj Dogrulama
       if(expected_block == EXPECTED_BLOCKS) {
-          LOG_INFO("Yuklenmeye hazir yeni firmware alimi tamamlandi.\n");
+          LOG_INFO("Tum parcalar alindi. Tum-imaj dogrulamasi (Whole-Image Checksum) baslatiliyor...\n");
+          
+          int verify_fd = cfs_open("downloaded-firmware.z1", CFS_READ);
+          if(verify_fd >= 0) {
+              uint32_t total_checksum = 0;
+              uint8_t buffer[CHUNK_SIZE];
+              int bytes_read;
+              
+              // Diskteki dosyayi bastan sona okuyup toplam checksum hesapliyoruz
+              while((bytes_read = cfs_read(verify_fd, buffer, sizeof(buffer))) > 0) {
+                  for(int i = 0; i < bytes_read; i++) {
+                      total_checksum += buffer[i];
+                  }
+              }
+              cfs_close(verify_fd);
+              LOG_INFO("Tum-Imaj Dogrulama basarili! Total Checksum: %lu\n", (unsigned long)total_checksum);
+              
+              // Sartnamede istenen final mesaji
+              LOG_INFO("Yuklenmeye hazir yeni firmware alimi tamamlandi.\n");
+          } else {
+              LOG_ERR("HATA: Dogrulama icin firmware dosyasi acilamadi!\n");
+          }
       }
   } else if (received_packet->block_num < expected_block) {
-      // Ağ gecikmesinden dolayı eski bir paket tekrar geldiyse, göndericiyi rahatlatmak için ACK'yı tekrar bas
+      // Ag gecikmesinden dolayi eski bir paket tekrar geldiyse, gondericiyi rahatlatmak icin ACK'yi tekrar bas
       LOG_INFO("Eski paket (%d) tekrar alindi, ACK yenileniyor.\n", received_packet->block_num);
   }
 
-  // 4. Şartname: Akıllı Onay (ACK) Gönderimi
+  // 4. Sartname: Akilli Onay (ACK) Gonderimi
   char ack_msg[32];
   snprintf(ack_msg, sizeof(ack_msg), "ACK:%d", received_packet->block_num);
   
