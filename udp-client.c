@@ -13,9 +13,8 @@
  
 /* Gonderilecek firmware verisini iceren header dosyasi.
  * Z1 mote Flash kapasitesi 92 KB oldugu icin 129 KB buyuklugundeki
- * new-firmware.z1 dogrudan gomulememektedir. Bu nedenle hocanin
- * saglayip firmware_data.h uzerinden paylastigi ELF imajinin ilk
- * 4096 bayti (64 blok) temsili olarak kullanilmaktadir.
+ * new-firmware.z1 dogrudan gomulememektedir. Bu nedenle ELF imajinin
+ * ilk 8192 bayti (128 blok) temsili olarak kullanilmaktadir.
  * static const tanimlamasi veriyi RAM yerine Flash (.rodata) bolgesine
  * yerlestirerek 8 KB RAM kisitini korumaktadir. */
 #include "firmware_data.h"
@@ -32,9 +31,9 @@
  
 #define CHUNK_SIZE      64
  
-/* Sartname: Yeniden gonderim icin maksimum deneme siniri.
- * Bu sinir asildiktan sonra aktarim hata ile sonlandirilir.
- * Sonsuz dongu korumasini saglar. */
+/* Sartname - Yeniden Gonderim:
+ * Maksimum yeniden deneme siniri. Bu sinir asildiktan sonra aktarim
+ * hata ile sonlandirilir; sonsuz dongu korumasini saglar. */
 #define MAX_RETRIES     5
  
 struct ota_packet {
@@ -47,14 +46,14 @@ struct ota_packet {
 static struct simple_udp_connection udp_conn;
 static uint32_t current_block = 0;  /* Suanda gonderilmeye calisilan blok */
  
-/* Sartname — Yeniden Gonderim:
+/* Sartname - Yeniden Gonderim:
  * Her zamanlayici dolumunda ayni blok icin kac kez deneme yapildigini
  * izler. ACK alindigi anda sifirlanir. MAX_RETRIES asiminda aktarim
  * durdurulur. */
 static uint8_t retry_count = 0;
  
 /* Aktarimin tamamlandigini veya hata ile sonlandigini bildiren bayrak.
- * Ana dongu bu bayrak set edilince temiz bicimde cikar. */
+ * Ana dongu bu bayrak set edilince temiz sekilde cikar. */
 static bool transfer_done = false;
  
 /*---------------------------------------------------------------------------*/
@@ -89,10 +88,10 @@ udp_rx_callback(struct simple_udp_connection *c,
         uint32_t ack_num = (uint32_t)atoi(msg + 4);
  
         if(ack_num == current_block) {
-            LOG_INFO("Onay alindi (ACK:%" PRIu32 "). "
+            LOG_INFO("Onay alindi (ACK:%lu). "
                      "Yeniden deneme sayaci sifirlaniyor, siradaki bloga geciliyor.\n",
-                     ack_num);
-            /* Sartname — Yeniden Gonderim:
+                     (unsigned long)ack_num);
+            /* Sartname - Yeniden Gonderim:
              * ACK basariyla alindi; sayaci sifirla ve bir sonraki bloga gec. */
             retry_count = 0;
             current_block++;
@@ -146,7 +145,7 @@ PROCESS_THREAD(udp_client_process, ev, data)
                     break;
                 }
  
-                /* Sartname — Yeniden Gonderim: Maksimum deneme siniri kontrolu.
+                /* Sartname - Yeniden Gonderim: Maksimum deneme siniri kontrolu.
                  * Bu blok icin MAX_RETRIES kez gonderildi, hic ACK gelmedi.
                  * Alici erisimi olmayabilir; aktarim hata ile sonlandiriliyor. */
                 if(retry_count >= MAX_RETRIES) {
@@ -162,11 +161,11 @@ PROCESS_THREAD(udp_client_process, ev, data)
                 struct ota_packet packet;
                 packet.block_num = (uint16_t)current_block;
  
-                uint32_t offset         = current_block * CHUNK_SIZE;
-                uint32_t remaining      = FIRMWARE_PAYLOAD_LEN - offset;
-                uint8_t  bytes_to_copy  = (remaining < CHUNK_SIZE)
-                                          ? (uint8_t)remaining
-                                          : (uint8_t)CHUNK_SIZE;
+                uint32_t offset        = current_block * CHUNK_SIZE;
+                uint32_t remaining     = FIRMWARE_PAYLOAD_LEN - offset;
+                uint8_t  bytes_to_copy = (remaining < CHUNK_SIZE)
+                                         ? (uint8_t)remaining
+                                         : (uint8_t)CHUNK_SIZE;
  
                 memcpy(packet.payload, &firmware_payload[offset], bytes_to_copy);
                 packet.data_len = bytes_to_copy;
@@ -202,3 +201,4 @@ PROCESS_THREAD(udp_client_process, ev, data)
  
     PROCESS_END();
 }
+ 
