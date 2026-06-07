@@ -2,7 +2,7 @@
 
 ## 🎥 Demo Video
 
-> **[YouTube Video Linki — Buraya Eklenecek]**
+> **[https://youtu.be/s1y-EFT1ah8]**
 >
 > Video içeriği: Cooja simülasyonu canlı gösterimi, geliştirilen bölümün anlatması, kullanılan checksum algoritmasının teorik açıklaması.
 
