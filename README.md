@@ -4,7 +4,7 @@
 
 > **[YouTube Video Linki — Buraya Eklenecek]**
 >
-> Video içeriği: Cooja simülasyonu canlı gösterimi, her üyenin kendi geliştirdiği bölümü anlatması, kullanılan checksum algoritmasının teorik açıklaması.
+> Video içeriği: Cooja simülasyonu canlı gösterimi, geliştirilen bölümün anlatması, kullanılan checksum algoritmasının teorik açıklaması.
 
 ---
 
